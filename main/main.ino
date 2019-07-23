@@ -12,7 +12,7 @@ int timeOn = 1000;    //specified in milliseconds
 int timeOff = 1000;   //specified in millisecods
 
 // Define motor
-const int motor = D3; //pin PWM
+const int motor = D8; //pin PWM
 
 // Define angle
 float max_angle = 0;
@@ -190,6 +190,7 @@ void setup()
     MPU6050_Init();
     pinMode(buzzer, OUTPUT);
     pinMode(motor, OUTPUT);
+    
 }
 
 void loop()
@@ -201,7 +202,7 @@ void loop()
         start_time = millis();
 
         // cicalino fa un bip per iniziare
-        startbuzzer();
+        //startbuzzer();
 
         //while loop per determinare se l'esercizio è iniziato entro 30s dall'accensione della fascia ----> vero periodo = 5 min
         while (current_time <= start_time + period && flag1 == true)
@@ -232,7 +233,7 @@ void loop()
                 Serial.print("accendo vibrazione");
                 Serial.print("\n");
                 period = 30000;        // nella realtà dura 30s
-                analogWrite(motor, 153); // parte vibrazione  //153 dice che è il valore per avere 60% duty cycle
+                analogWrite(motor, 522); // parte vibrazione  //153 dice che è il valore per avere 60% duty cycle
                 current_time = millis();
                 wait_time = millis();
                 while (current_time <= wait_time + period && flag1 == true)
@@ -260,7 +261,7 @@ void loop()
             {
               // attesa data da dato preso dal server, prima del nuovo trial
               // salvare su server che non è stato fatto l'esercizio
-              Serial.print("Salvo sul server che l'esercizio non è stato svolto.")
+              Serial.print("Salvo sul server che l'esercizio non è stato svolto.");
             }
         }
 
