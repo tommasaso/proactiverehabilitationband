@@ -6,7 +6,7 @@
 #include "MPU6050_6Axis_MotionApps20.h"
 
 // Define buzzer
-const int buzzer = 4;
+const int buzzer = D4;
 int frequency = 2000; //Specified in Hz
 int timeOn = 1000;    //specified in milliseconds
 int timeOff = 1000;   //specified in millisecods
@@ -17,9 +17,8 @@ const int motor = D8; //pin PWM
 // Define angle
 float max_angle = 0;
 float current_angle = 0;
-float goal = 80; //obiettivo (angolo da raggiungere). prendere da web
-float th = 30;   //soglia (angolo minimo da superare per poter dire di aver iniziato l'esercizio). prendere da web
-//float myarray[]; //array per salvare angoli durante il mantenimento
+float goal = 30; //obiettivo (angolo da raggiungere). prendere da web
+float th = 5;   //soglia (angolo minimo da superare per poter dire di aver iniziato l'esercizio). prendere da web
 
 // Define IMU
 MPU6050 mpu;
@@ -81,12 +80,12 @@ void I2C_Write(uint8_t deviceAddress, uint8_t regAddress, uint8_t data)
 
 void setoffsetIMU()
 {
-    mpu.setXGyroOffset(117);
-    mpu.setYGyroOffset(46);
-    mpu.setZGyroOffset(-71);
-    mpu.setZAccelOffset(-4886);
-    mpu.setZAccelOffset(-1691);
-    mpu.setZAccelOffset(-203);
+    mpu.setXGyroOffset(253);
+    mpu.setYGyroOffset(-16);
+    mpu.setZGyroOffset(-68);
+    mpu.setXAccelOffset(-3787);
+    mpu.setYAccelOffset(981);
+    mpu.setZAccelOffset(961);
 }
 
 //configure MPU6050
@@ -131,6 +130,30 @@ void startbuzzer()
     noTone(buzzer);
     delay(200);
     delay(timeOff);
+}
+
+void errorbuzzer()
+{
+    digitalWrite(buzzer, HIGH);
+    delay(100);
+    digitalWrite(buzzer, LOW);
+    delay(100);
+    tone(buzzer, 2000);
+    delay(20);
+    noTone(buzzer);
+    delay(5);
+}
+
+void endbuzzer()
+{
+    digitalWrite(buzzer, HIGH);
+    delay(100);
+    digitalWrite(buzzer, LOW);
+    delay(100);
+    tone(buzzer, 2000);
+    delay(300);
+    noTone(buzzer);
+    delay(200);
 }
 
 void getAccel()
@@ -202,7 +225,7 @@ void loop()
         start_time = millis();
 
         // cicalino fa un bip per iniziare
-        //startbuzzer();
+        startbuzzer();
 
         //while loop per determinare se l'esercizio è iniziato entro 30s dall'accensione della fascia ----> vero periodo = 5 min
         while (current_time <= start_time + period && flag1 == true)
@@ -269,7 +292,7 @@ void loop()
         { 
             start_time = millis();
             current_angle = Roll;
-            period = 30000;           // quanto deve durare l'esercizio? durata di mantenimento da scaricare dal server
+            period = 10000;           // quanto deve durare l'esercizio? durata di mantenimento da scaricare dal server
             bool first_goal = true;
             while (current_time <= start_time + period)
             {
@@ -295,11 +318,16 @@ void loop()
                 if (current_angle > 1.15 * goal)
                 {
                     Serial.print("too high roll\n");
-                    startbuzzer(); //to do: da implementare un suono diverso, magari prolungato
+                    errorbuzzer(); //to do: da implementare un suono diverso, magari prolungato
                 }
             }
             // to do: sound to understand that exercise is finished
             // to do: salvo il valore sul server
+            endbuzzer();
+            delay(100);
+            endbuzzer();
+            delay(100);
+            endbuzzer();
             mean = sum / i;
             Serial.print("mean: ");
             Serial.print(mean);
