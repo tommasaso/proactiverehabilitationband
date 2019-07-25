@@ -5,6 +5,33 @@
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
+// Library Server
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFiMulti.h>
+#include <ArduinoJson.h>
+
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+
+ESP8266WiFiMulti WiFiMulti;
+
+ESP8266WebServer server(80); // server listens on port 80
+
+// Fingerprint
+const uint8_t fingerprint[20] = {0xE5, 0x6D, 0xEE, 0x05, 0x46, 0xC8, 0xD6, 0xF7, 0xF7, 0x2E, 0x48, 0x60, 0x6F, 0x64, 0xE3, 0xCB, 0x65, 0x61, 0x48, 0x3E};
+
+// from ArduinoJson.h
+const size_t CAPACITY = JSON_OBJECT_SIZE(1024);
+StaticJsonDocument<CAPACITY> doc;   //controllare se si svuota da sola o se serve un clear
+
+// Wifi Connection
+const char* ssid = "Honor 9 Lite";  //  address of access point
+const char* password = "ciao1234"; //  password of access point
+
+// https server
+HTTPClient https;
+
 // Define buzzer
 const int buzzer = D4;
 int frequency = 2000; //Specified in Hz
@@ -17,8 +44,8 @@ const int motor = D8; //pin PWM
 // Define angle
 float max_angle = 0;
 float current_angle = 0;
-float goal = 30; //obiettivo (angolo da raggiungere). prendere da web
-float th = 5;   //soglia (angolo minimo da superare per poter dire di aver iniziato l'esercizio). prendere da web
+int goal; //obiettivo (angolo da raggiungere). prendere da web
+float th;   //soglia (angolo minimo da superare per poter dire di aver iniziato l'esercizio). prendere da web
 
 // Define IMU
 MPU6050 mpu;
@@ -60,14 +87,14 @@ bool exercise = true; // per far partire l'esercizio
 float sum = 0;
 float mean = 0;
 int i = 0;
+int counter = 0;
 
 // Define time
 int time_milliseconds = 10000;
 unsigned long inizio = 0;
 unsigned long start_time;
-unsigned long current_time = millis();
-unsigned long period = 30000;
 unsigned long wait_time;
+int repetition;
 
 // Define function
 void I2C_Write(uint8_t deviceAddress, uint8_t regAddress, uint8_t data)
@@ -205,6 +232,93 @@ void CatchAngles()
     }
 }
 
+// Get function
+String getValue(String url) {
+  if ((WiFiMulti.run() == WL_CONNECTED)) {
+    
+    std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
+    client->setFingerprint(fingerprint);
+    
+    Serial.print("[HTTPS] begin...\n");
+    if (https.begin(*client, url)) {  // HTTPS
+
+      Serial.print("[HTTPS] GET...\n");   
+      
+      // start connection and send HTTP header
+      int httpCode = https.GET();
+
+      // httpCode will be negative on error
+      if (httpCode > 0) {
+        // HTTP header has been send and Server response header has been handled
+        //Serial.printf("[HTTPS] GET... code: %d\n", httpCode);
+        // file found at server
+        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {   
+          String payload = https.getString();
+          //Serial.println(payload);
+          deserializeJson(doc, payload);
+          JsonObject obj = doc.as<JsonObject>(); 
+          String Value = obj[String("attrValue")];  
+          //Serial.print(Value);
+          return Value;      
+       
+           }
+      } else {
+        Serial.printf("[HTTPS] GET... failed, error: %s\n", https.errorToString(httpCode).c_str());
+      }
+
+      https.end();
+    } else {
+      Serial.printf("[HTTPS] Unable to connect\n");
+    }
+  }
+}
+
+// Put function
+void putValue(char* value) {
+  if ((WiFiMulti.run() == WL_CONNECTED)) {
+
+    std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
+
+    client->setFingerprint(fingerprint);
+
+    HTTPClient https;
+    
+    Serial.print("[HTTPS] begin...\n");
+    // https://jigsaw.w3.org/HTTP/connection.html
+    if (https.begin(*client, "https://fiware.humana-vox.com/cb/v2/entities/urn:ngsi-ld:Device:003/attrs/led0/value")) {  // HTTPS
+
+      Serial.print("[HTTPS] PUT...\n");
+      https.addHeader("Content-Type", "application/json");
+
+        // Creating JSON object
+        // create an object
+        JsonObject object = doc.to<JsonObject>();
+        object["stato"] = value;
+      
+      // start connection and send HTTP header
+      int httpCode = https.PUT(value);
+
+      // httpCode will be negative on error
+      if (httpCode > 0) {
+        // HTTP header has been send and Server response header has been handled
+        Serial.printf("[HTTPS] PUT... code: %d\n", httpCode);
+
+        // file found at server
+        if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+          String payload = https.getString();
+          Serial.println(payload);
+        }
+      } else {
+        Serial.printf("[HTTPS] PUT... failed, error: %s\n", https.errorToString(httpCode).c_str());
+      }
+
+      https.end();
+    } else {
+      Serial.printf("[HTTPS] Unable to connect\n");
+    }
+  }
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -213,23 +327,45 @@ void setup()
     MPU6050_Init();
     pinMode(buzzer, OUTPUT);
     pinMode(motor, OUTPUT);
-    
+    Serial.printf("Connecting to %s ", ssid);
+    WiFi.begin(ssid, password); //Connect to the WiFi network
+    WiFiMulti.addAP(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) { //Wait for connection
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP()); //Print the local IP
+    server.begin(); //Start the server
+    Serial.println("Server listening");
+    // Acquisisco l'angolo massimo, cioè il goal. 
+    String strGoal = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
+    goal = strGoal.toInt() - 90;
+    th = goal*0.3; // La soglia indica che si è iniziato l'esercizio. E' il 30% del goal
+    String strRepetition = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
+    repetition = strRepetition.toInt();
 }
 
 void loop()
 {
-    if (exercise){
-        //delay(500);
-        FunctionsPitchRoll(Ax, Ay, Az); //Calcolo angolo Roll e Pitch
-        current_angle = Roll;
-        start_time = millis();
+    while (counter <= repetition){
+      Serial.println("TI PREGO");     
+      server.handleClient();
+      FunctionsPitchRoll(Ax, Ay, Az); //Calcolo angolo Roll e Pitch
+      current_angle = Roll;
+      start_time = millis();
+      unsigned long current_time = millis();
+  
+      // Acquisizione delayAllowed: tempo entro il quale si deve iniziare l'esercizio. Il valore è in secondi.
+      String strdelayAllowed = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=startTime&type=last");
+      int delayAllowed = strdelayAllowed.toInt() * 1000;
 
-        // cicalino fa un bip per iniziare
-        startbuzzer();
+      // cicalino fa un bip per iniziare
+      startbuzzer();
 
-        //while loop per determinare se l'esercizio è iniziato entro 30s dall'accensione della fascia ----> vero periodo = 5 min
-        while (current_time <= start_time + period && flag1 == true)
-        {
+      //while loop per determinare se l'esercizio è iniziato entro 30s dall'accensione della fascia ----> vero periodo = 5 min
+      while (current_time <= start_time + delayAllowed && flag1 == true)
+      {
             current_time = millis();
             CatchAngles();
             if (max_angle >= th)
@@ -244,7 +380,7 @@ void loop()
         }
 
         if (flag1 == true)//non ha raggiunto la soglia. Parte timer per la vibrazione. uscito da while perché non è iniziato esercizio
-        { 
+        {             
             for (int times = 0; times <= 2; times++)
             { //vibra per tre volte con un ritardo di 60s tra una vibrazione e l'altra a meno che non venga raggiunta la soglia. Bisogna controllare i delay!
                 Serial.print("non ha ancora iniziato esercizio");
@@ -255,11 +391,10 @@ void loop()
                 delay(20000);          // nella realtà di dieci minuti    
                 Serial.print("accendo vibrazione");
                 Serial.print("\n");
-                period = 30000;        // nella realtà dura 30s
                 analogWrite(motor, 522); // parte vibrazione  //153 dice che è il valore per avere 60% duty cycle
                 current_time = millis();
                 wait_time = millis();
-                while (current_time <= wait_time + period && flag1 == true)
+                while (current_time <= wait_time + delayAllowed && flag1 == true)
                 {
                     Serial.print("vibra per un minuto");
                     Serial.print("\n");
@@ -292,9 +427,11 @@ void loop()
         { 
             start_time = millis();
             current_angle = Roll;
-            period = 10000;           // quanto deve durare l'esercizio? durata di mantenimento da scaricare dal server
+            // Acquisizione del tempo di mantenimento una volta raggiunta la soglia
+            String strMaintenance = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=tMin&type=last");
+            int maintenance = strMaintenance.toInt() * 60000;
             bool first_goal = true;
-            while (current_time <= start_time + period)
+            while (current_time <= start_time + maintenance)
             {
 
                 delay(200);
@@ -331,8 +468,16 @@ void loop()
             mean = sum / i;
             Serial.print("mean: ");
             Serial.print(mean);
+            mean = 0;
+            flag1 = true;
             Serial.print("\nEsercizio finito");
             exercise = false;
         }
+    counter = counter+1;
+    max_angle = 0;
+    // Acquisizione periodo: ogni quanto far iniziare l’esercizio. Il valore è in minuti
+    String strPeriod = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=period&type=last");
+    int period = strPeriod.toInt() * 60000;
+    delay(period);
     }
 }
