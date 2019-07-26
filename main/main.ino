@@ -274,7 +274,7 @@ String getValue(String url) {
 }
 
 // Put function
-void putValue(char* value) {
+void putValue(char* url, char* attrName, char* attrValue) {
   if ((WiFiMulti.run() == WL_CONNECTED)) {
 
     std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
@@ -285,7 +285,7 @@ void putValue(char* value) {
     
     Serial.print("[HTTPS] begin...\n");
     // https://jigsaw.w3.org/HTTP/connection.html
-    if (https.begin(*client, "https://fiware.humana-vox.com/cb/v2/entities/urn:ngsi-ld:Device:003/attrs/led0/value")) {  // HTTPS
+    if (https.begin(*client, url)) {  // HTTPS
 
       Serial.print("[HTTPS] PUT...\n");
       https.addHeader("Content-Type", "application/json");
@@ -293,11 +293,11 @@ void putValue(char* value) {
         // Creating JSON object
         // create an object
         JsonObject object = doc.to<JsonObject>();
-        object["stato"] = value;
+        object[attrName] = attrValue;
       
       // start connection and send HTTP header
-      int httpCode = https.PUT(value);
-
+      int httpCode = https.PUT(attrValue);
+      
       // httpCode will be negative on error
       if (httpCode > 0) {
         // HTTP header has been send and Server response header has been handled
@@ -344,6 +344,9 @@ void setup()
     th = goal*0.3; // La soglia indica che si è iniziato l'esercizio. E' il 30% del goal
     String strRepetition = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
     repetition = strRepetition.toInt();
+
+
+    putValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1", "angleMax", "88.8");
 }
 
 void loop()
