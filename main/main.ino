@@ -1,11 +1,32 @@
-// Library
+//PROACTIVE REHABILITATION BAND//
+//MOTOR CONTROL AND HUMAN PERFORMANCE ASSESSMENT PROJECT - Alampi Manuela Maria & Coduri Mara
+
+//Arduino skecth that provides instruction to use a wearable band for arm rehabilitation.
+//The device is designed for women who had a mastectomy.
+//Just extension movement is controlled.
+//The device consists of: NodeMCU ESP8266, IMU6050, a vibrator and a buzzer.
+//Besides the device provides a WiFi connection that allows to set some variables by a web application and to save the results on the same app.
+
+/* INSTRUCTION FOR USE 
+Once the device has been worn and turned on, a beep indicates the start of the exercise (extension of the arm).
+1) The exercise is deemed to be started if the threshold has been reached.
+   The buzzer is activated when the goal is reached and when it's exceeded (warning signal).
+   A timer allows to control that the position (at a certain angle) is manteined for long enough.
+   The average angle reached is saved on the web application.
+2) If the exercise isn't executed, a vibration occurs three times with brief intervals between vibrations. The vibration is stopped if the exercise starts.
+3) Three beeps indicates the execution is finished whether the exercise has started or not. Data is saved.
+Exercise must be executed several times during the day. The buzzer deals with remember when another repetition of the exercise occurs with a bip.
+*/
+
+
+// Libraries
 #include <Wire.h>
 #include <SPI.h>
 #include <math.h>
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
-// Library Server
+// Libraries Server
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFiMulti.h>
@@ -23,7 +44,7 @@ const uint8_t fingerprint[20] = {0xE5, 0x6D, 0xEE, 0x05, 0x46, 0xC8, 0xD6, 0xF7,
 
 // from ArduinoJson.h
 const size_t CAPACITY = JSON_OBJECT_SIZE(1024);
-StaticJsonDocument<CAPACITY> doc;   //controllare se si svuota da sola o se serve un clear
+StaticJsonDocument<CAPACITY> doc;   //to do: controllare se si svuota da sola o se serve un clear
 
 // Wifi Connection
 const char* ssid = "Honor 9 Lite";  //  address of access point
@@ -34,9 +55,9 @@ HTTPClient https;
 
 // Define buzzer
 const int buzzer = D4;
-int frequency = 2000; //Specified in Hz
-int timeOn = 1000;    //specified in milliseconds
-int timeOff = 1000;   //specified in millisecods
+int frequency = 2000; //In Hz
+int timeOn = 1000;    //In milliseconds
+int timeOff = 1000;   //In millisecods
 
 // Define motor
 const int motor = D8; //pin PWM
@@ -44,8 +65,8 @@ const int motor = D8; //pin PWM
 // Define angle
 float max_angle = 0;
 float current_angle = 0;
-int goal; //obiettivo (angolo da raggiungere). prendere da web
-float th;   //soglia (angolo minimo da superare per poter dire di aver iniziato l'esercizio). prendere da web
+int goal; //angle to reach with arm extension // Taken by the web application
+float th;   //threshold (minumum angle to exceed to start the exercise)// Taken by the web application
 
 // Define IMU
 MPU6050 mpu;
@@ -80,10 +101,10 @@ double Roll, Pitch;
 double Ax, Ay, Az, T, Gx, Gy, Gz;
 
 // Define flag
-bool flag1 = true; //variabile booleana per interrompere il ciclo while
-bool exercise = true; // per far partire l'esercizio
+bool flag1 = true; 
+bool exercise = true; // to start the exercise
 
-//Define
+//Define average angle
 float sum = 0;
 float mean = 0;
 int i = 0;
@@ -96,7 +117,7 @@ unsigned long start_time;
 unsigned long wait_time;
 int repetition;
 
-// Define function
+// Define functions
 void I2C_Write(uint8_t deviceAddress, uint8_t regAddress, uint8_t data)
 {
     Wire.beginTransmission(deviceAddress);
@@ -146,6 +167,7 @@ void Read_RawValue(uint8_t deviceAddress, uint8_t regAddress)
     GyroZ = (((int16_t)Wire.read() << 8) | Wire.read());
 }
 
+// buzzer to start the exercise
 void startbuzzer()
 {
     digitalWrite(buzzer, HIGH);
@@ -159,6 +181,7 @@ void startbuzzer()
     delay(timeOff);
 }
 
+// buzzer to signal an excessive extension
 void errorbuzzer()
 {
     digitalWrite(buzzer, HIGH);
@@ -171,6 +194,8 @@ void errorbuzzer()
     delay(5);
 }
 
+
+// buzzer to end the exercise
 void endbuzzer()
 {
     digitalWrite(buzzer, HIGH);
@@ -183,6 +208,7 @@ void endbuzzer()
     delay(200);
 }
 
+// Get acceleration
 void getAccel()
 {
     Ax = (double)AccelX / AccelScaleFactor;
@@ -190,13 +216,15 @@ void getAccel()
     Az = (double)AccelZ / AccelScaleFactor;
 }
 
-void getGyro()
-{
-    Gx = (double)GyroX / GyroScaleFactor;
-    Gy = (double)GyroY / GyroScaleFactor;
-    Gz = (double)GyroZ / GyroScaleFactor;
-}
+// eliminiamo visto che non serve?
+//void getGyro()
+//{
+//    Gx = (double)GyroX / GyroScaleFactor;
+//    Gy = (double)GyroY / GyroScaleFactor;
+//    Gz = (double)GyroZ / GyroScaleFactor;
+//}
 
+//Get Pitch and Roll angles
 void FunctionsPitchRoll(double Ax, double Ay, double Az)
 {
 
@@ -215,9 +243,10 @@ void FunctionsPitchRoll(double Ax, double Ay, double Az)
     Roll = Roll * (180.0 / 3.14);
 }
 
+// Get Pitch and Roll and updte max angle
 void CatchAngles()
 {
-    FunctionsPitchRoll(Ax, Ay, Az); //Calcolo angolo Roll e Pitch
+    FunctionsPitchRoll(Ax, Ay, Az); 
     current_angle = Roll;
     Serial.print("Pitch: ");
     Serial.print(Pitch);
@@ -255,7 +284,7 @@ String getValue(String url) {
         if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {   
           String payload = https.getString();
           //Serial.println(payload);
-          deserializeJson(doc, payload);
+          deserializeJson(doc, payload);    //parse string
           JsonObject obj = doc.as<JsonObject>(); 
           String Value = obj[String("attrValue")];  
           //Serial.print(Value);
@@ -328,20 +357,21 @@ void setup()
     pinMode(buzzer, OUTPUT);
     pinMode(motor, OUTPUT);
     Serial.printf("Connecting to %s ", ssid);
-    WiFi.begin(ssid, password); //Connect to the WiFi network
+    WiFi.begin(ssid, password);     //Connect to the WiFi network
     WiFiMulti.addAP(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) { //Wait for connection
+    while (WiFi.status() != WL_CONNECTED) {     //Wait for connection
       delay(500);
       Serial.print(".");
     }
     Serial.print("IP address: ");
-    Serial.println(WiFi.localIP()); //Print the local IP
-    server.begin(); //Start the server
+    Serial.println(WiFi.localIP());     //Print the local IP
+    server.begin();     //Start the server
     Serial.println("Server listening");
-    // Acquisisco l'angolo massimo, cioè il goal. 
+    
+    // The goal and the number of repetitions of the exercise are taken from the web application 
     String strGoal = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
     goal = strGoal.toInt() - 90;
-    th = goal*0.3; // La soglia indica che si è iniziato l'esercizio. E' il 30% del goal
+    th = goal*0.3;  // threshold is 30% of the goal
     String strRepetition = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
     repetition = strRepetition.toInt();
 
@@ -354,61 +384,60 @@ void loop()
     while (counter <= repetition){
       Serial.println("TI PREGO");     
       server.handleClient();
-      FunctionsPitchRoll(Ax, Ay, Az); //Calcolo angolo Roll e Pitch
+      FunctionsPitchRoll(Ax, Ay, Az);     //Calculate Pitch and Roll
       current_angle = Roll;
       start_time = millis();
       unsigned long current_time = millis();
   
-      // Acquisizione delayAllowed: tempo entro il quale si deve iniziare l'esercizio. Il valore è in secondi.
+      // Acquisition of delayAllowed: time (in seconds) within which the exercise must be started
       String strdelayAllowed = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=startTime&type=last");
       int delayAllowed = strdelayAllowed.toInt() * 1000;
 
-      // cicalino fa un bip per iniziare
+      // Buzzer
       startbuzzer();
 
-      //while loop per determinare se l'esercizio è iniziato entro 30s dall'accensione della fascia ----> vero periodo = 5 min
+      //while loop to determine whether the exercise started within the delayAllowed
       while (current_time <= start_time + delayAllowed && flag1 == true)
       {
             current_time = millis();
             CatchAngles();
             if (max_angle >= th)
             {
-                Serial.print("Threashold raggiunto - l'esercizio è iniziato ");
+                Serial.print("Threashold has been reached  - exercise started");
                 Serial.print("\n");
                 flag1 = false;
-                analogWrite(motor, 0); // spegne la vibrazione
-                Serial.print("spengo vibrazione");
+                analogWrite(motor, 0);    // turn off vibration
+                Serial.print("Turn off vibration");
                 Serial.print("\n");
             }
         }
 
-        if (flag1 == true)//non ha raggiunto la soglia. Parte timer per la vibrazione. uscito da while perché non è iniziato esercizio
-        {             
+        if (flag1 == true)  {     //Threshold hasn't been reached - while loop interrupts because the exercise didn't start. Timer for vibration starts.            
             for (int times = 0; times <= 2; times++)
-            { //vibra per tre volte con un ritardo di 60s tra una vibrazione e l'altra a meno che non venga raggiunta la soglia. Bisogna controllare i delay!
-                Serial.print("non ha ancora iniziato esercizio");
+            { //It vibrates three times with 30s between vibrations. For loop interrupts if threshold is reached
+                Serial.print("Exercise hasn't started yet");
                 Serial.print("\n");
-                Serial.print("spengo vibrazione");
+                Serial.print("Turn off vibration");
                 Serial.print("\n");
-                analogWrite(motor, 0); // spegne la vibrazione
-                delay(20000);          // nella realtà di dieci minuti    
-                Serial.print("accendo vibrazione");
+                analogWrite(motor, 0);  // turn off vibration
+                delay(20000);          // real value: 10minutes    
+                Serial.print("Turn on vibration");
                 Serial.print("\n");
-                analogWrite(motor, 522); // parte vibrazione  //153 dice che è il valore per avere 60% duty cycle
+                analogWrite(motor, 522);  //turn on vibration
                 current_time = millis();
                 wait_time = millis();
                 while (current_time <= wait_time + delayAllowed && flag1 == true)
                 {
-                    Serial.print("vibra per un minuto");
+                    Serial.print("Vibration for one minute");
                     Serial.print("\n");
                     current_time = millis();
                     CatchAngles();
                     if (max_angle >= th)
                     {
-                        Serial.print("Threashold raggiunto - l'esercizio è iniziato ");
+                        Serial.print("Threshold has been reached  - exercise started");
                         Serial.print("\n");
-                        analogWrite(motor, 0); // spegne la vibrazione perchè l'esercizio è iniziato
-                        Serial.print("spengo vibrazione");
+                        analogWrite(motor, 0);    //turn off vibration because exercise started
+                        Serial.print("Turn off vibration");
                         Serial.print("\n");
                         flag1 = false;
                     }
@@ -426,11 +455,11 @@ void loop()
             }
         }
 
-        if (flag1 == false) //ho raggiunto la soglia e flag1 = false
+        if (flag1 == false)   //Threshold has been reached  - exercise started
         { 
             start_time = millis();
             current_angle = Roll;
-            // Acquisizione del tempo di mantenimento una volta raggiunta la soglia
+            // Acquisition of time in which position must be manteined
             String strMaintenance = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=tMin&type=last");
             int maintenance = strMaintenance.toInt() * 60000;
             bool first_goal = true;
@@ -439,7 +468,7 @@ void loop()
 
                 delay(200);
                 current_time = millis();
-                FunctionsPitchRoll(Ax, Ay, Az); //Calcolo angolo Roll e Pitch
+                FunctionsPitchRoll(Ax, Ay, Az); 
                 Serial.print("Pitch: ");
                 Serial.print(Pitch);
                 Serial.print("\t");
@@ -451,34 +480,34 @@ void loop()
                 sum = sum + current_angle;
                 if (current_angle > goal && first_goal)
                 {
-                    Serial.print("reached the goal for the first time\n");
-                    startbuzzer();
+                    Serial.print("Goal has been reached for the first time\n");
+                    startbuzzer();    //to signal that the goal has been reached. Now position has to be manteined
                     first_goal = false;
                 }
                 if (current_angle > 1.15 * goal)
                 {
-                    Serial.print("too high roll\n");
-                    errorbuzzer(); //to do: da implementare un suono diverso, magari prolungato
+                    Serial.print("Warning - too high roll\n");
+                    errorbuzzer();    //to signal that the goal has been exceeded. Warning!
                 }
             }
-            // to do: sound to understand that exercise is finished
+            
             // to do: salvo il valore sul server
-            endbuzzer();
+            endbuzzer();    //three beeps to end the exercise
             delay(100);
             endbuzzer();
             delay(100);
             endbuzzer();
-            mean = sum / i;
+            mean = sum / i;     //average angle that has been reached
             Serial.print("mean: ");
             Serial.print(mean);
             mean = 0;
             flag1 = true;
-            Serial.print("\nEsercizio finito");
+            Serial.print("\nExercise ended");
             exercise = false;
         }
     counter = counter+1;
     max_angle = 0;
-    // Acquisizione periodo: ogni quanto far iniziare l’esercizio. Il valore è in minuti
+    // Period acquisition (in minutes): how often exercise must be done
     String strPeriod = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=period&type=last");
     int period = strPeriod.toInt() * 60000;
     delay(period);
