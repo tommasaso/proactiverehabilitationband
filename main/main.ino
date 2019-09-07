@@ -108,7 +108,7 @@ bool exercise = true; // to start the exercise
 float sum = 0;
 float mean = 0;
 int i = 0;
-int counter = 0;
+int counter = 1;
 
 // Define time
 int time_milliseconds = 10000;
@@ -319,13 +319,17 @@ void putValue(char* url, char* attrName, char* attrValue) {
       Serial.print("[HTTPS] PUT...\n");
       https.addHeader("Content-Type", "application/json");
 
-        // Creating JSON object
-        // create an object
-        JsonObject object = doc.to<JsonObject>();
-        object[attrName] = attrValue;
+      // Creating JSON object
+      StaticJsonDocument<300> JSONbuffer; //Declaring static JSON buffer
+      JSONbuffer["deviceId"] = "urn:ngsi-ld:ProactiveRehabilitationBand";
+      JSONbuffer["attrName"] = attrName;
+      JSONbuffer["attrValue"] = attrValue;
+
+      String jsonSerialized;
+      serializeJson(JSONbuffer, jsonSerialized);
       
       // start connection and send HTTP header
-      int httpCode = https.PUT(attrValue);
+      int httpCode = https.PUT(jsonSerialized);
       
       // httpCode will be negative on error
       if (httpCode > 0) {
@@ -372,17 +376,17 @@ void setup()
     String strGoal = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
     goal = strGoal.toInt() - 90;
     th = goal*0.3;  // threshold is 30% of the goal
-    String strRepetition = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=goal&type=last");
+    String strRepetition = getValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1?deviceId=urn:ngsi-ld:ProactiveRehabilitationBand&attrName=repetition&type=last");
     repetition = strRepetition.toInt();
-
-
-    putValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1", "angleMax", "88.8");
 }
 
 void loop()
 {
     while (counter <= repetition){
-      Serial.println("TI PREGO");     
+      Serial.print("counter: ");
+      Serial.print(counter);
+      Serial.print("repetition: ");
+      Serial.print(repetition);
       server.handleClient();
       FunctionsPitchRoll(Ax, Ay, Az);     //Calculate Pitch and Roll
       current_angle = Roll;
@@ -420,7 +424,7 @@ void loop()
                 Serial.print("Turn off vibration");
                 Serial.print("\n");
                 analogWrite(motor, 0);  // turn off vibration
-                delay(20000);          // real value: 10minutes    
+                delay(600000);          // 10minutes    
                 Serial.print("Turn on vibration");
                 Serial.print("\n");
                 analogWrite(motor, 522);  //turn on vibration
@@ -451,6 +455,8 @@ void loop()
             {
               // attesa data da dato preso dal server, prima del nuovo trial
               // salvare su server che non è stato fatto l'esercizio
+              analogWrite(motor, 0);  // turn off vibration
+              putValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1", "execution", "No");
               Serial.print("Salvo sul server che l'esercizio non è stato svolto.");
             }
         }
@@ -500,6 +506,9 @@ void loop()
             mean = sum / i;     //average angle that has been reached
             Serial.print("mean: ");
             Serial.print(mean);
+            char array[10];
+            sprintf(array, "%f", mean);
+            putValue("https://demoapp.humana-vox.com/datahub/default/accumulator.json/3635f4e4e9e332f8a560023dd57490c1", "angleMax", array);
             mean = 0;
             flag1 = true;
             Serial.print("\nExercise ended");
